@@ -2,6 +2,7 @@
 
 import time
 from typing import List, Dict, Any
+from pathlib import Path
 from sqlalchemy.orm import Session
 from app.repositories.speaker_repository import SpeakerRepository, SpeakerSegmentRepository
 from app.repositories.transcript_repository import TranscriptRepository
@@ -13,6 +14,8 @@ from app.schemas.speaker import (
 )
 from app.core.exceptions import NotFoundError, ValidationError, AuthorizationError
 from app.models.enums import UserRole
+from app.services.transcription_service import TranscriptionService
+from app.services.storage_service import StorageService
 
 
 class SpeakerService:
@@ -24,6 +27,12 @@ class SpeakerService:
         self.segment_repo = SpeakerSegmentRepository(db)
         self.transcript_repo = TranscriptRepository(db)
         self.session_repo = SessionRepository(db)
+        self.storage_service = StorageService()
+        try:
+            self.transcription_service = TranscriptionService()
+        except ValueError:
+            # OpenAI API key not configured
+            self.transcription_service = None
     
     def get_speakers_by_transcript(
         self,
@@ -237,28 +246,31 @@ class SpeakerService:
         """
         Perform speaker diarization on a transcript
         
-        NOTE: This is a placeholder implementation. In production, this would:
-        1. Get the audio file from the recording session
-        2. Use a diarization library (e.g., pyannote.audio) to identify speakers
-        3. Create Speaker and SpeakerSegment records from the results
-        
-        For now, it creates mock diarization data for demonstration.
+        This re-runs AI-powered speaker diarization on the audio file:
+        1. Gets the audio file from the recording session
+        2. Uses OpenAI gpt-4o-transcribe-diarize to identify speakers
+        3. Deletes old speaker records
+        4. Creates new Speaker and SpeakerSegment records from the results
         
         Args:
-            request: Diarization request
+            request: Diarization request with optional min/max speaker constraints
             user_id: Requesting user ID
             user_role: User role
             tenant_id: Tenant ID
             
         Returns:
-            Diarization results
+            Diarization results with speakers and their segments
             
         Raises:
-            NotFoundError: If transcript not found
+            NotFoundError: If transcript or audio file not found
             AuthorizationError: If access denied
+            ValidationError: If transcription service is not configured
         """
         start_time = time.time()
         
+        print(f"[DIARIZATION] Starting re-diarization for transcript {request.transcript_id}")
+        
+        # Validate transcript exists and user has access
         transcript = self.transcript_repo.get_with_tenant_check(request.transcript_id, tenant_id)
         
         if not transcript:
@@ -266,25 +278,149 @@ class SpeakerService:
         
         # Check session access
         session = self.session_repo.get_by_id(transcript.session_id)
+        if not session:
+            raise NotFoundError("Recording session not found")
+            
         if user_role != UserRole.ADMIN and session.user_id != user_id:
             raise AuthorizationError("Access denied")
         
-        # TODO: Implement actual diarization logic here
-        # This would involve:
-        # 1. Loading the audio file
-        # 2. Running diarization model
-        # 3. Parsing results and creating speakers/segments
+        # Check if transcription service is available
+        if not self.transcription_service:
+            raise ValidationError(
+                "Diarization service not configured. Please set OPENAI_API_KEY in environment."
+            )
         
-        # For now, return mock data
-        # In real implementation, you would create actual Speaker and SpeakerSegment records
+        # Get audio file path
+        if not session.audio_file_path:
+            raise NotFoundError("No audio file associated with this session")
         
-        speakers = self.speaker_repo.get_by_transcript(request.transcript_id, tenant_id)
+        audio_file_path = self.storage_service.get_file_path(session.audio_file_path)
+        
+        if not audio_file_path.exists():
+            raise NotFoundError(f"Audio file not found: {session.audio_file_path}")
+        
+        print(f"[DIARIZATION] Audio file: {audio_file_path}")
+        
+        # Calculate actual duration from session timestamps
+        actual_duration = None
+        if session.ended_at and session.started_at:
+            time_diff = session.ended_at - session.started_at
+            actual_duration = time_diff.total_seconds()
+            print(f"[DIARIZATION] Session duration: {actual_duration:.1f} seconds")
+        
+        # Run diarization
+        try:
+            result = self.transcription_service.transcribe_with_speakers(
+                str(audio_file_path),
+                actual_duration=actual_duration
+            )
+            
+            print(f"[DIARIZATION] Detected {len(result.get('speakers', []))} speakers")
+            
+        except Exception as e:
+            print(f"[DIARIZATION ERROR] Failed to diarize: {str(e)}")
+            raise ValidationError(f"Diarization failed: {str(e)}")
+        
+        # Delete existing speakers for this transcript
+        existing_speakers = self.speaker_repo.get_by_transcript(request.transcript_id, tenant_id)
+        for speaker in existing_speakers:
+            self.speaker_repo.delete(speaker.id)
+        
+        print(f"[DIARIZATION] Deleted {len(existing_speakers)} old speaker records")
+        
+        # Create new speaker records
+        created_speakers = self._create_speakers_from_diarization(
+            transcript_id=request.transcript_id,
+            tenant_id=tenant_id,
+            speaker_labels=result.get("speakers", []),
+            segments=result.get("segments", [])
+        )
         
         processing_time = time.time() - start_time
         
+        print(f"[DIARIZATION] Completed in {processing_time:.2f} seconds")
+        
         return DiarizationResponse(
             transcript_id=request.transcript_id,
-            speakers=[],  # Would contain actual speakers from diarization
-            total_speakers=len(speakers),
+            speakers=created_speakers,
+            total_speakers=len(created_speakers),
             processing_time=processing_time
         )
+    
+    def _create_speakers_from_diarization(
+        self,
+        transcript_id: int,
+        tenant_id: int,
+        speaker_labels: List[str],
+        segments: List[Dict[str, Any]]
+    ) -> List[SpeakerResponse]:
+        """
+        Create speaker and segment records from diarization results
+        
+        Args:
+            transcript_id: Transcript ID
+            tenant_id: Tenant ID
+            speaker_labels: List of unique speaker labels
+            segments: List of segments with speaker labels and timestamps
+            
+        Returns:
+            List of created speakers with their segments
+        """
+        print(f"[DIARIZATION] Creating {len(speaker_labels)} speaker records")
+        
+        # Calculate speaking duration for each speaker
+        speaker_durations = {}
+        speaker_segments = {label: [] for label in speaker_labels}
+        
+        for segment in segments:
+            speaker = segment.get("speaker")
+            if speaker:
+                duration = segment.get("end", 0) - segment.get("start", 0)
+                speaker_durations[speaker] = speaker_durations.get(speaker, 0) + duration
+                speaker_segments[speaker].append(segment)
+        
+        # Create speaker records with segments
+        created_speakers = []
+        
+        for speaker_label in speaker_labels:
+            # Create speaker
+            speaker_dict = {
+                "transcript_id": transcript_id,
+                "tenant_id": tenant_id,
+                "speaker_label": speaker_label,
+                "total_speaking_time": speaker_durations.get(speaker_label, 0),
+                "confidence": 1.0  # OpenAI provides high-confidence diarization
+            }
+            
+            speaker = self.speaker_repo.create(speaker_dict)
+            
+            # Create segments for this speaker
+            segments_data = [
+                {
+                    "speaker_id": speaker.id,
+                    "transcript_id": transcript_id,
+                    "start_time": seg.get("start", 0),
+                    "end_time": seg.get("end", 0),
+                    "text": seg.get("text", "").strip(),
+                    "confidence": 1.0
+                }
+                for seg in speaker_segments.get(speaker_label, [])
+                if seg.get("text", "").strip()  # Only create segments with text
+            ]
+            
+            created_segments = []
+            if segments_data:
+                created_segments = self.segment_repo.create_segments(segments_data)
+            
+            # Build response
+            speaker_response = SpeakerResponse.model_validate(speaker)
+            speaker_response.segments = [
+                SpeakerSegmentResponse.model_validate(seg) for seg in created_segments
+            ]
+            created_speakers.append(speaker_response)
+            
+            print(f"[DIARIZATION] Created speaker {speaker_label}: "
+                  f"{len(created_segments)} segments, "
+                  f"{speaker_durations.get(speaker_label, 0):.1f}s total time")
+        
+        return created_speakers

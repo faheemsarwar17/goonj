@@ -53,9 +53,9 @@ class Settings(BaseSettings):
     # AI Services
     OPENAI_API_KEY: str = Field(
         default="",
-        description="OpenAI API key for transcription and diarization"
+        description="OpenAI API key for transcription with speaker diarization"
     )
-    OPENAI_MODEL: str = "gpt-4o-transcribe-diarize"
+    OPENAI_MODEL: str = "gpt-4o-transcribe-diarize"  # Model with native speaker diarization
     
     # Admin
     FIRST_ADMIN_EMAIL: str = "admin@example.com"
