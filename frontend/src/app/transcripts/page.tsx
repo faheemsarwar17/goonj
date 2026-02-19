@@ -13,12 +13,25 @@ export default function TranscriptsPage() {
   const [transcripts, setTranscripts] = useState<Transcript[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [expandedTranscripts, setExpandedTranscripts] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     if (user) {
       loadTranscripts()
     }
   }, [user])
+
+  const toggleExpand = (transcriptId: number) => {
+    setExpandedTranscripts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(transcriptId)) {
+        newSet.delete(transcriptId)
+      } else {
+        newSet.add(transcriptId)
+      }
+      return newSet
+    })
+  }
 
   const loadTranscripts = async () => {
     try {
@@ -133,17 +146,18 @@ export default function TranscriptsPage() {
 
                   {/* Transcript Content Preview */}
                   <div className="mt-4 p-4 bg-gray-50 rounded-md border border-gray-200">
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-4">
-                      {transcript.content}
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                      {expandedTranscripts.has(transcript.id) 
+                        ? transcript.content 
+                        : transcript.content.substring(0, 500) + (transcript.content.length > 500 ? '...' : '')
+                      }
                     </p>
-                    {transcript.content.length > 200 && (
+                    {transcript.content.length > 500 && (
                       <button
-                        onClick={() => {
-                          // Toggle expand functionality here
-                        }}
-                        className="text-sm text-blue-600 hover:text-blue-800 mt-2"
+                        onClick={() => toggleExpand(transcript.id)}
+                        className="text-sm text-blue-600 hover:text-blue-800 mt-2 font-medium"
                       >
-                        Read more...
+                        {expandedTranscripts.has(transcript.id) ? 'Show less' : 'Read more...'}
                       </button>
                     )}
                   </div>

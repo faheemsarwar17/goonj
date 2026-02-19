@@ -15,6 +15,8 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    
     console.log('Login form submitted')
     setError('')
     setIsLoading(true)
@@ -40,9 +42,12 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       console.error('Login error:', err)
-      setError(err.response?.data?.detail || 'Login failed. Please check your credentials.')
+      const errorMessage = err.response?.data?.detail || err.message || 'Login failed. Please check your credentials.'
+      setError(errorMessage)
       setIsLoading(false)
     }
+    
+    return false
   }
 
   return (
@@ -56,7 +61,7 @@ export default function LoginPage() {
             Audio Transcript Application
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit} action="javascript:void(0)">
           {error && (
             <div className="rounded-md bg-red-50 p-4">
               <p className="text-sm text-red-800">{error}</p>

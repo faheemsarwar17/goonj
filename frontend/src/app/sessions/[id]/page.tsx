@@ -18,6 +18,7 @@ export default function SessionDetailPage() {
   const [transcript, setTranscript] = useState<Transcript | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false)
 
   useEffect(() => {
     if (user && sessionId) {
@@ -259,19 +260,23 @@ export default function SessionDetailPage() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Transcript</h3>
                 {transcript ? (
                   <div>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 max-h-96 overflow-y-auto">
                       <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                        {transcript.content.substring(0, 500)}
-                        {transcript.content.length > 500 && '...'}
+                        {isTranscriptExpanded 
+                          ? transcript.content 
+                          : transcript.content.substring(0, 500) + (transcript.content.length > 500 ? '...' : '')
+                        }
                       </p>
                     </div>
                     <div className="flex gap-3">
-                      <button
-                        onClick={() => router.push(`/transcripts`)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                      >
-                        View Full Transcript
-                      </button>
+                      {transcript.content.length > 500 && (
+                        <button
+                          onClick={() => setIsTranscriptExpanded(!isTranscriptExpanded)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                        >
+                          {isTranscriptExpanded ? 'Show Less' : 'View Full Transcript'}
+                        </button>
+                      )}
                       <button
                         onClick={() => router.push(`/speakers?transcriptId=${transcript.id}`)}
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md text-sm font-medium"
