@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     # Admin
     FIRST_ADMIN_EMAIL: str = "admin@example.com"
     FIRST_ADMIN_PASSWORD: str = "changeme"
+    FIRST_ADMIN_NAME: str = "System Administrator"
     
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

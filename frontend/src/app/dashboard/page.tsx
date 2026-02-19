@@ -144,7 +144,7 @@ export default function DashboardPage() {
 
                 {user.role === 'admin' && (
                   <button
-                    onClick={() => router.push('/dashboard/admin')}
+                    onClick={() => router.push('/admin')}
                     className="bg-orange-50 overflow-hidden shadow rounded-lg hover:bg-orange-100 transition-colors cursor-pointer text-left"
                   >
                     <div className="p-5">

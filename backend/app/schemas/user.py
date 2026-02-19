@@ -16,6 +16,7 @@ class UserCreate(UserBase):
     """Schema for user signup/registration"""
     password: str = Field(..., min_length=8, max_length=100)
     tenant_id: Optional[int] = None  # Will be auto-assigned if not provided
+    role: Optional[UserRole] = UserRole.USER  # Allow admins to set role
 
 
 class UserLogin(BaseModel):
@@ -29,7 +30,9 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=1, max_length=255)
     email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
+    role: Optional[UserRole] = None
     is_active: Optional[bool] = None
+    is_approved: Optional[bool] = None
 
 
 class UserResponse(UserBase):

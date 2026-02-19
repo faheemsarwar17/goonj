@@ -83,6 +83,22 @@ export default function SessionDetailPage() {
     }
   }
 
+  const handleDeleteSession = async () => {
+    if (!session) return
+    
+    if (!confirm(`Are you sure you want to delete session "${session.title}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      await sessionApi.deleteSession(session.id)
+      router.push('/sessions')
+    } catch (err: any) {
+      console.error('Delete error:', err)
+      alert('Failed to delete session: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
   const getAudioUrl = (sessionId: number): string => {
     const token = localStorage.getItem('access_token')
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -292,6 +308,27 @@ export default function SessionDetailPage() {
                     </p>
                   </div>
                 )}
+              </div>
+
+              {/* Delete Session */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Danger Zone</h3>
+                <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-red-900">Delete Session</h4>
+                      <p className="text-sm text-red-700 mt-1">
+                        Once you delete a session, there is no going back. This will delete the session, audio file, and associated transcripts.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleDeleteSession}
+                      className="ml-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap"
+                    >
+                      Delete Session
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

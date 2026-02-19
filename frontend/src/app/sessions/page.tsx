@@ -47,6 +47,20 @@ export default function SessionsPage() {
     }
   }
 
+  const handleDeleteSession = async (sessionId: number, title: string) => {
+    if (!confirm(`Are you sure you want to delete session "${title}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      await sessionApi.deleteSession(sessionId)
+      setSessions(sessions.filter(s => s.id !== sessionId))
+    } catch (err: any) {
+      console.error('Delete error:', err)
+      alert('Failed to delete session: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
   const getStatusBadge = (status: SessionStatus) => {
     const styles: Record<SessionStatus, string> = {
       [SessionStatus.RECORDING]: 'bg-red-100 text-red-800',
@@ -190,11 +204,17 @@ export default function SessionsPage() {
                         {session.status === SessionStatus.COMPLETED && (
                           <button
                             onClick={() => router.push(`/transcripts`)}
-                            className="text-green-600 hover:text-green-900"
+                            className="text-green-600 hover:text-green-900 mr-4"
                           >
                             Transcripts
                           </button>
                         )}
+                        <button
+                          onClick={() => handleDeleteSession(session.id, session.title)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
