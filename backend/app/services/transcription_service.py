@@ -1,4 +1,4 @@
-"""AI-powered transcription service using OpenAI gpt-4o-transcribe-diarize"""
+"""AI-powered transcription service"""
 
 import os
 from pathlib import Path
@@ -11,10 +11,9 @@ from app.core.exceptions import TranscriptionError
 class TranscriptionService:
     """
     Service for AI-powered audio transcription with speaker diarization
-    Uses OpenAI gpt-4o-transcribe-diarize for accurate speaker identification
     
     This service provides:
-    - Native speaker diarization from OpenAI
+    - Speaker diarization and identification
     - Accurate speaker labels with timestamps
     - Automatic audio chunking for long recordings
     - Multiple speaker detection
@@ -25,8 +24,7 @@ class TranscriptionService:
             raise ValueError("OPENAI_API_KEY is not configured")
         
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = "gpt-4o-transcribe-diarize"  # Native diarization support
-        print(f"[TRANSCRIPTION] Initialized with {self.model}")
+        self.model = settings.OPENAI_MODEL
     
     def transcribe_audio(
         self, 
@@ -35,7 +33,7 @@ class TranscriptionService:
         actual_duration: Optional[float] = None
     ) -> Dict:
         """
-        Transcribe audio file with native speaker diarization
+        Transcribe audio file with speaker diarization
         
         Args:
             audio_file_path: Path to the audio file
@@ -49,8 +47,6 @@ class TranscriptionService:
             TranscriptionError: If transcription fails
         """
         try:
-            print(f"[TRANSCRIPTION] Starting transcription for: {audio_file_path}")
-            
             # Verify file exists
             file_path = Path(audio_file_path)
             if not file_path.exists():
@@ -58,41 +54,24 @@ class TranscriptionService:
             
             # Check file size
             file_size = file_path.stat().st_size
-            print(f"[TRANSCRIPTION] File size: {file_size} bytes")
-            
             if file_size == 0:
                 raise TranscriptionError("Audio file is empty")
             
-            # Transcribe with OpenAI gpt-4o-transcribe-diarize
-            print(f"[TRANSCRIPTION] Calling OpenAI {self.model} API...")
-            
             with open(audio_file_path, "rb") as audio_file:
-                # Call diarization model with correct parameters
                 response = self.client.audio.transcriptions.create(
                     model=self.model,
                     file=audio_file,
                     response_format="diarized_json",
                     extra_body={
-                        "chunking_strategy": "auto"  # Required for audio > 30 seconds
+                        "chunking_strategy": "auto"
                     }
                 )
             
-            print(f"[TRANSCRIPTION] Received response")
-            
-            # Log segments count
-            segments_count = len(response.segments) if hasattr(response, 'segments') else 0
-            print(f"[TRANSCRIPTION] Got {segments_count} diarized segments")
-            
             # Format results from diarization response
             result = self._format_diarization_response(response, actual_duration)
-            
-            print(f"[TRANSCRIPTION] Transcription completed successfully")
             return result
             
         except Exception as e:
-            print(f"[TRANSCRIPTION ERROR] {str(e)}")
-            import traceback
-            traceback.print_exc()
             raise TranscriptionError(f"Failed to transcribe audio: {str(e)}")
     
     def _format_diarization_response(
@@ -101,7 +80,7 @@ class TranscriptionService:
         actual_duration: Optional[float]
     ) -> Dict:
         """
-        Format transcription results from gpt-4o-transcribe-diarize
+        Format transcription results from API response
         
         Args:
             transcription: API response with diarized segments
@@ -117,8 +96,6 @@ class TranscriptionService:
         
         # Get diarized segments
         segments_raw = transcription.segments if hasattr(transcription, 'segments') else []
-        
-        print(f"[TRANSCRIPTION] Processing {len(segments_raw)} diarized segments")
         
         # Format segments
         segments = []
@@ -142,22 +119,12 @@ class TranscriptionService:
         
         # If no segments, create fallback
         if not segments:
-            print("[TRANSCRIPTION WARNING] No diarized segments, using single speaker")
             segments = [{
                 "speaker": "SPEAKER_00",
                 "start": 0,
                 "end": duration or 0,
                 "text": text
             }]
-        
-        # Log speaker summary
-        unique_speakers = len(set(seg["speaker"] for seg in segments))
-        print(f"[TRANSCRIPTION] Detected {unique_speakers} unique speakers")
-        
-        for speaker in sorted(set(seg["speaker"] for seg in segments)):
-            speaker_segments = [s for s in segments if s["speaker"] == speaker]
-            total_time = sum(s["end"] - s["start"] for s in speaker_segments)
-            print(f"[TRANSCRIPTION] {speaker}: {len(speaker_segments)} segments, {total_time:.1f}s speaking time")
         
         result = {
             "text": text,
@@ -182,8 +149,7 @@ class TranscriptionService:
         actual_duration: Optional[float] = None
     ) -> Dict:
         """
-        Complete transcription pipeline with native speaker diarization
-        Uses OpenAI gpt-4o-transcribe-diarize
+        Complete transcription pipeline with speaker diarization
         
         Args:
             audio_file_path: Path to the audio file
@@ -195,9 +161,7 @@ class TranscriptionService:
         Raises:
             TranscriptionError: If transcription fails
         """
-        print(f"[TRANSCRIPTION_PIPELINE] Starting diarization with {self.model}")
-        
-        # Get transcription with speaker estimation
+        # Get transcription with speaker diarization
         transcript_result = self.transcribe_audio(audio_file_path, actual_duration=actual_duration)
         
         # Format final output
@@ -208,10 +172,6 @@ class TranscriptionService:
             "segments": transcript_result["segments"],
             "speakers": self._extract_unique_speakers(transcript_result["segments"])
         }
-        
-        print(f"[TRANSCRIPTION_PIPELINE] Pipeline completed successfully")
-        print(f"[TRANSCRIPTION_PIPELINE] Total segments: {len(result['segments'])}")
-        print(f"[TRANSCRIPTION_PIPELINE] Total speakers: {len(result['speakers'])}")
         
         return result
     

@@ -248,7 +248,7 @@ class SpeakerService:
         
         This re-runs AI-powered speaker diarization on the audio file:
         1. Gets the audio file from the recording session
-        2. Uses OpenAI gpt-4o-transcribe-diarize to identify speakers
+        2. Uses AI transcription service to identify speakers
         3. Deletes old speaker records
         4. Creates new Speaker and SpeakerSegment records from the results
         
@@ -267,8 +267,6 @@ class SpeakerService:
             ValidationError: If transcription service is not configured
         """
         start_time = time.time()
-        
-        print(f"[DIARIZATION] Starting re-diarization for transcript {request.transcript_id}")
         
         # Validate transcript exists and user has access
         transcript = self.transcript_repo.get_with_tenant_check(request.transcript_id, tenant_id)
@@ -299,14 +297,11 @@ class SpeakerService:
         if not audio_file_path.exists():
             raise NotFoundError(f"Audio file not found: {session.audio_file_path}")
         
-        print(f"[DIARIZATION] Audio file: {audio_file_path}")
-        
         # Calculate actual duration from session timestamps
         actual_duration = None
         if session.ended_at and session.started_at:
             time_diff = session.ended_at - session.started_at
             actual_duration = time_diff.total_seconds()
-            print(f"[DIARIZATION] Session duration: {actual_duration:.1f} seconds")
         
         # Run diarization
         try:
@@ -314,19 +309,13 @@ class SpeakerService:
                 str(audio_file_path),
                 actual_duration=actual_duration
             )
-            
-            print(f"[DIARIZATION] Detected {len(result.get('speakers', []))} speakers")
-            
         except Exception as e:
-            print(f"[DIARIZATION ERROR] Failed to diarize: {str(e)}")
             raise ValidationError(f"Diarization failed: {str(e)}")
         
         # Delete existing speakers for this transcript
         existing_speakers = self.speaker_repo.get_by_transcript(request.transcript_id, tenant_id)
         for speaker in existing_speakers:
             self.speaker_repo.delete(speaker.id)
-        
-        print(f"[DIARIZATION] Deleted {len(existing_speakers)} old speaker records")
         
         # Create new speaker records
         created_speakers = self._create_speakers_from_diarization(
@@ -337,8 +326,6 @@ class SpeakerService:
         )
         
         processing_time = time.time() - start_time
-        
-        print(f"[DIARIZATION] Completed in {processing_time:.2f} seconds")
         
         return DiarizationResponse(
             transcript_id=request.transcript_id,
@@ -366,8 +353,6 @@ class SpeakerService:
         Returns:
             List of created speakers with their segments
         """
-        print(f"[DIARIZATION] Creating {len(speaker_labels)} speaker records")
-        
         # Calculate speaking duration for each speaker
         speaker_durations = {}
         speaker_segments = {label: [] for label in speaker_labels}
@@ -389,7 +374,7 @@ class SpeakerService:
                 "tenant_id": tenant_id,
                 "speaker_label": speaker_label,
                 "total_speaking_time": speaker_durations.get(speaker_label, 0),
-                "confidence": 1.0  # OpenAI provides high-confidence diarization
+                "confidence": 1.0
             }
             
             speaker = self.speaker_repo.create(speaker_dict)
@@ -418,9 +403,5 @@ class SpeakerService:
                 SpeakerSegmentResponse.model_validate(seg) for seg in created_segments
             ]
             created_speakers.append(speaker_response)
-            
-            print(f"[DIARIZATION] Created speaker {speaker_label}: "
-                  f"{len(created_segments)} segments, "
-                  f"{speaker_durations.get(speaker_label, 0):.1f}s total time")
         
         return created_speakers
