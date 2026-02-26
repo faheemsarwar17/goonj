@@ -31,6 +31,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const startTimeRef = useRef<number>(0)
   const pausedTimeRef = useRef<number>(0)
@@ -98,27 +99,28 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
               'No system audio was captured. Make sure to check "Share audio" when sharing your screen.'
             )
           }
-          
-          // Stop video tracks since we only need audio
-          systemStream.getVideoTracks().forEach(track => track.stop())
         } else {
           try {
             systemStream = await navigator.mediaDevices.getDisplayMedia({
-              video: true, // Required for getDisplayMedia, even if we only want audio
+              video: true,
               audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
+                echoCancellation: false, // Turn off echo cancellation for system audio to get raw sound
+                noiseSuppression: false, // Turn off noise suppression for system audio
+                autoGainControl: false,  // Turn off auto gain for system audio
               },
             })
             
             // Check if audio track was actually included
             const hasAudioTrack = systemStream.getAudioTracks().length > 0
             
-            // Stop video tracks since we only need audio
-            systemStream.getVideoTracks().forEach(track => track.stop())
-            
             if (!hasAudioTrack) {
-              systemStream.getTracks().forEach(track => track.stop())
+              // Don't stop tracks immediately if no audio found, to allow graceful exit or retry
+              try {
+                systemStream.getTracks().forEach(track => track.stop())
+              } catch (e) {
+                console.warn('Error stopping tracks', e)
+              }
+
               if (micStream && !existingMicStream) {
                 micStream.getTracks().forEach(track => track.stop())
               }
@@ -127,6 +129,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
               )
             }
           } catch (err: any) {
+            // Also stop mic stream if system stream failed
             if (micStream && !existingMicStream) {
               micStream.getTracks().forEach(track => track.stop())
             }
@@ -142,7 +145,13 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
 
       // Mix streams if both are selected
       if (audioSource === 'both' && micStream && systemStream) {
+        // Close any existing context to prevent leaks (max 6 per browser)
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          await audioContextRef.current.close()
+        }
+
         const audioContext = new AudioContext()
+        audioContextRef.current = audioContext
         const destination = audioContext.createMediaStreamDestination()
 
         const micSource = audioContext.createMediaStreamSource(micStream)
@@ -162,8 +171,10 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
         finalStream = micStream
         streamRef.current = micStream
       } else if (systemStream) {
-        finalStream = systemStream
-        streamRef.current = systemStream
+        // Create audio-only stream to prevent MediaRecorder mimeType mismatch
+        // since getDisplayMedia always returns a video track
+        finalStream = new MediaStream(systemStream.getAudioTracks())
+        streamRef.current = systemStream // Keep original to stop all tracks later
       } else {
         throw new Error('No audio stream available')
       }
@@ -174,7 +185,15 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
           ? 'audio/webm;codecs=opus'
           : 'audio/webm',
       }
+      
+      // Ensure finalStream has only audio tracks for audio mimeType
+      // This is critical if we passed a full stream with video (e.g. mic + system without mixing, or raw mic stream with video)
+      if (finalStream.getVideoTracks().length > 0) {
+        console.log('[RECORDER] Filtering out video tracks for audio-only recorder')
+        finalStream = new MediaStream(finalStream.getAudioTracks())
+      }
 
+      console.log(`[RECORDER] Creating MediaRecorder with mimeType: ${options.mimeType}`)
       const mediaRecorder = new MediaRecorder(finalStream, options)
       mediaRecorderRef.current = mediaRecorder
 
@@ -248,6 +267,12 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
             streamRef.current = null
           }
 
+          // Close AudioContext to prevent resource leaks/crashes
+          if (audioContextRef.current) {
+            audioContextRef.current.close()
+            audioContextRef.current = null
+          }
+
           resolve(blob)
         }
 
@@ -294,6 +319,11 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
+    }
+    
+    if (audioContextRef.current) {
+      audioContextRef.current.close()
+      audioContextRef.current = null
     }
     
     if (timerRef.current) {
