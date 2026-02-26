@@ -5,11 +5,12 @@ export interface RecorderState {
   isPaused: boolean
   duration: number
   audioBlob: Blob | null
+  stream: MediaStream | null
 }
 
 export interface UseAudioRecorderReturn {
   state: RecorderState
-  startRecording: (audioSource: 'microphone' | 'device' | 'both', existingMicStream?: MediaStream | null, existingScreenStream?: MediaStream | null) => Promise<void>
+  startRecording: (audioSource: 'microphone' | 'device' | 'both', existingMicStream?: MediaStream | null, existingScreenStream?: MediaStream | null, onChunk?: (chunk: Blob) => void) => Promise<MediaStream>
   stopRecording: () => Promise<Blob | null>
   pauseRecording: () => void
   resumeRecording: () => void
@@ -23,6 +24,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
     isPaused: false,
     duration: 0,
     audioBlob: null,
+    stream: null,
   })
   const [error, setError] = useState<string>('')
 
@@ -48,7 +50,8 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
   const startRecording = useCallback(async (
     audioSource: 'microphone' | 'device' | 'both',
     existingMicStream?: MediaStream | null,
-    existingScreenStream?: MediaStream | null
+    existingScreenStream?: MediaStream | null,
+    onChunk?: (chunk: Blob) => void
   ) => {
     try {
       setError('')
@@ -177,13 +180,23 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
+          console.log(`[RECORDER] Received chunk: ${event.data.size} bytes`)
           chunksRef.current.push(event.data)
+          // Call chunk callback if provided (for live streaming)
+          if (onChunk) {
+            onChunk(event.data)
+          }
         }
       }
 
       mediaRecorder.onstop = () => {
+        // Request any remaining data before creating final blob
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.requestData()
+        }
+        
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        console.log(`[RECORDER] Recording stopped. Blob size: ${blob.size} bytes`)
+        console.log(`[RECORDER] Recording stopped. Total chunks: ${chunksRef.current.length}, Blob size: ${blob.size} bytes`)
         setState(prev => ({ ...prev, audioBlob: blob, isRecording: false, isPaused: false }))
         
         if (timerRef.current) {
@@ -192,7 +205,9 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
         }
       }
 
-      mediaRecorder.start(100) // Collect data every 100ms
+      // Use 1000ms (1 second) timeslice for proper WebM chunks
+      // Smaller timeslices create corrupted files when reassembled
+      mediaRecorder.start(1000)
       startTimeRef.current = Date.now()
       pausedTimeRef.current = 0
       
@@ -201,9 +216,13 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
         isPaused: false,
         duration: 0,
         audioBlob: null,
+        stream: finalStream,
       })
       
       updateDuration()
+      
+      console.log('[RECORDER] Recording started successfully with stream:', !!finalStream)
+      return finalStream
     } catch (err: any) {
       setError(err.message || 'Failed to start recording')
       throw err
@@ -232,6 +251,12 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
           resolve(blob)
         }
 
+        // Request final data before stopping to ensure nothing is lost
+        if (mediaRecorderRef.current.state === 'recording') {
+          console.log('[RECORDER] Requesting final data before stop')
+          mediaRecorderRef.current.requestData()
+        }
+        
         mediaRecorderRef.current.stop()
       } else {
         resolve(null)
@@ -243,13 +268,12 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
     if (mediaRecorderRef.current && state.isRecording && !state.isPaused) {
       mediaRecorderRef.current.pause()
       pauseStartRef.current = Date.now()
+      setState(prev => ({ ...prev, isPaused: true }))
       
       if (timerRef.current) {
         clearInterval(timerRef.current)
         timerRef.current = null
       }
-      
-      setState(prev => ({ ...prev, isPaused: true }))
     }
   }, [state.isRecording, state.isPaused])
 
@@ -283,6 +307,7 @@ export const useAudioRecorder = (): UseAudioRecorderReturn => {
       isPaused: false,
       duration: 0,
       audioBlob: null,
+      stream: null,
     })
   }, [])
 

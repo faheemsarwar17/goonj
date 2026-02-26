@@ -211,3 +211,51 @@ def get_current_user_with_query_token(
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"}
         )
+
+
+async def get_current_user_from_token(
+    token: str,
+    db: Session
+) -> User:
+    """
+    Get current user from JWT token string (for WebSocket authentication)
+    
+    Args:
+        token: JWT token string
+        db: Database session
+        
+    Returns:
+        Current user
+        
+    Raises:
+        Exception: If authentication fails
+    """
+    try:
+        # Decode token
+        payload = security.decode_token(token)
+        
+        if not payload:
+            raise AuthenticationError("Invalid authentication credentials")
+        
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise AuthenticationError("Invalid token payload")
+        
+        # Get user from database
+        user_repo = UserRepository(db)
+        user = user_repo.get_by_id(user_id)
+        
+        if not user:
+            raise AuthenticationError("User not found")
+        
+        if not user.is_active:
+            raise AuthenticationError("User account is inactive")
+        
+        if not user.is_approved:
+            raise AuthenticationError("User account not approved")
+        
+        return user
+        
+    except Exception as e:
+        raise Exception(f"Authentication failed: {str(e)}")
+

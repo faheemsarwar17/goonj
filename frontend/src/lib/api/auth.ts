@@ -10,8 +10,27 @@ export const authApi = {
    * Login user
    */
   login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
-    const response = await apiClient.post<LoginResponse>('/auth/login', credentials)
-    return response.data
+    console.log('[AUTH_API] login: Starting request with credentials:', { email: credentials.email, passwordLength: credentials.password?.length })
+    console.log('[AUTH_API] login: API URL:', apiClient.defaults.baseURL)
+    try {
+      const response = await apiClient.post<LoginResponse>('/auth/login', credentials)
+      console.log('[AUTH_API] login: Response received:', response.status, response.statusText)
+      console.log('[AUTH_API] login: Response data:', response.data)
+      return response.data
+    } catch (error: any) {
+      console.error('[AUTH_API] login: Error occurred:', error)
+      console.error('[AUTH_API] login: Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          baseURL: error.config?.baseURL
+        }
+      })
+      throw error
+    }
   },
 
   /**

@@ -1,9 +1,11 @@
 """AI-powered transcription service"""
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from openai import OpenAI
+from pydub import AudioSegment
 from app.core.config import settings
 from app.core.exceptions import TranscriptionError
 
@@ -17,6 +19,7 @@ class TranscriptionService:
     - Accurate speaker labels with timestamps
     - Automatic audio chunking for long recordings
     - Multiple speaker detection
+    - Audio format conversion for compatibility
     """
     
     def __init__(self):
@@ -25,6 +28,45 @@ class TranscriptionService:
         
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.OPENAI_MODEL
+    
+    def _convert_to_mp3(self, audio_file_path: str) -> str:
+        """
+        Convert audio file to MP3 format for better OpenAI compatibility
+        
+        Args:
+            audio_file_path: Path to the audio file
+            
+        Returns:
+            Path to the converted MP3 file
+        """
+        print(f"[TRANSCRIPTION] Converting audio to MP3: {audio_file_path}")
+        
+        try:
+            file_path = Path(audio_file_path)
+            file_ext = file_path.suffix.lower()
+            
+            # If already MP3, return as-is
+            if file_ext == '.mp3':
+                return audio_file_path
+            
+            # Load the audio file
+            audio = AudioSegment.from_file(audio_file_path)
+            
+            # Create temporary MP3 file
+            temp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+            temp_mp3_path = temp_mp3.name
+            temp_mp3.close()
+            
+            # Export as MP3
+            audio.export(temp_mp3_path, format='mp3', bitrate='128k')
+            
+            print(f"[TRANSCRIPTION] Converted to MP3: {temp_mp3_path}")
+            return temp_mp3_path
+            
+        except Exception as e:
+            print(f"[TRANSCRIPTION ERROR] Failed to convert audio: {str(e)}")
+            # If conversion fails, return original file
+            return audio_file_path
     
     def transcribe_audio(
         self, 
@@ -46,6 +88,7 @@ class TranscriptionService:
         Raises:
             TranscriptionError: If transcription fails
         """
+        converted_file = None
         try:
             # Verify file exists
             file_path = Path(audio_file_path)
@@ -57,7 +100,10 @@ class TranscriptionService:
             if file_size == 0:
                 raise TranscriptionError("Audio file is empty")
             
-            with open(audio_file_path, "rb") as audio_file:
+            # Convert to MP3 for better OpenAI compatibility
+            converted_file = self._convert_to_mp3(audio_file_path)
+            
+            with open(converted_file, "rb") as audio_file:
                 response = self.client.audio.transcriptions.create(
                     model=self.model,
                     file=audio_file,
@@ -73,6 +119,14 @@ class TranscriptionService:
             
         except Exception as e:
             raise TranscriptionError(f"Failed to transcribe audio: {str(e)}")
+        finally:
+            # Clean up temporary MP3 file if it was created
+            if converted_file and converted_file != audio_file_path:
+                try:
+                    os.remove(converted_file)
+                    print(f"[TRANSCRIPTION] Cleaned up temp file: {converted_file}")
+                except Exception as e:
+                    print(f"[TRANSCRIPTION] Failed to clean up temp file: {e}")
     
     def _format_diarization_response(
         self,
