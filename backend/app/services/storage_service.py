@@ -1,12 +1,15 @@
 """File storage service for audio files"""
 
 import os
+import logging
 import shutil
 from pathlib import Path
 from typing import Optional
 from fastapi import UploadFile
 from app.core.config import settings
 from app.core.exceptions import StorageError
+
+logger = logging.getLogger(__name__)
 
 
 class StorageService:
@@ -66,72 +69,80 @@ class StorageService:
             StorageError: If save operation fails
         """
         try:
-            print(f"[STORAGE] Starting to save audio file for session {session_id}, tenant {tenant_id}")
-            print(f"[STORAGE] Uploaded file name: {file.filename}")
-            print(f"[STORAGE] Base storage path: {self.base_path}")
+            logger.debug("Saving audio file for session %s, tenant %s", session_id, tenant_id)
             
             # Validate file extension
             file_ext = os.path.splitext(file.filename)[1].lower()
-            print(f"[STORAGE] File extension: {file_ext}")
             
             if file_ext not in settings.ALLOWED_AUDIO_FORMATS:
                 raise StorageError(f"Invalid file format. Allowed formats: {', '.join(settings.ALLOWED_AUDIO_FORMATS)}")
             
+            # Sanitize filename to prevent path traversal / injection
+            safe_basename = os.path.basename(file.filename)
+            if safe_basename != file.filename or '..' in file.filename:
+                raise StorageError("Invalid filename")
+            
             # Get session directory
             session_dir = self._get_session_directory(tenant_id, session_id)
-            print(f"[STORAGE] Session directory will be: {session_dir}")
             
             self._ensure_directory(session_dir)
-            print(f"[STORAGE] Directory created/verified: {session_dir.exists()}")
             
             # Create file path
             filename = f"audio{file_ext}"
             file_path = session_dir / filename
-            print(f"[STORAGE] Full file path: {file_path}")
             
             # Check if file has content
             file.file.seek(0, 2)  # Seek to end
             file_size = file.file.tell()
             file.file.seek(0)  # Reset to beginning
-            print(f"[STORAGE] File size in upload: {file_size} bytes")
             
             if file_size == 0:
                 raise StorageError("Uploaded file is empty (0 bytes)")
             
+            # Enforce file size limit
+            max_size_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+            if file_size > max_size_bytes:
+                raise StorageError(f"File too large ({file_size / (1024*1024):.1f} MB). Maximum allowed: {settings.MAX_FILE_SIZE_MB} MB")
+            
             # Save file
             with open(file_path, "wb") as buffer:
-                bytes_written = shutil.copyfileobj(file.file, buffer)
-                print(f"[STORAGE] Bytes written: {bytes_written}")
+                shutil.copyfileobj(file.file, buffer)
+            
+            # Return relative path
+            relative_path = f"audio/{tenant_id}/{session_id}/{filename}"
             
             # Verify file was saved
             if file_path.exists():
                 saved_size = file_path.stat().st_size
-                print(f"[STORAGE] File saved successfully! Size on disk: {saved_size} bytes")
+                logger.debug("File saved successfully: %s (%d bytes)", relative_path, saved_size)
             else:
                 raise StorageError("File path does not exist after save operation")
             
-            # Return relative path
-            relative_path = f"audio/{tenant_id}/{session_id}/{filename}"
-            print(f"[STORAGE] Returning relative path: {relative_path}")
             return relative_path
             
+        except StorageError:
+            raise
         except Exception as e:
-            print(f"[STORAGE ERROR] Failed to save file: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Failed to save audio file")
             raise StorageError(f"Failed to save file: {str(e)}")
     
     def get_file_path(self, relative_path: str) -> Path:
         """
-        Get absolute file path from relative path
+        Get absolute file path from relative path (with traversal guard)
         
         Args:
             relative_path: Relative file path
             
         Returns:
             Absolute file path
+            
+        Raises:
+            StorageError: If path escapes the storage directory
         """
-        return self.base_path / relative_path
+        resolved = (self.base_path / relative_path).resolve()
+        if not str(resolved).startswith(str(self.base_path.resolve())):
+            raise StorageError("Invalid file path")
+        return resolved
     
     def delete_file(self, relative_path: str) -> bool:
         """

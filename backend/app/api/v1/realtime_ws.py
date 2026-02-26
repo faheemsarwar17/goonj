@@ -1,15 +1,18 @@
-"""
-WebSocket proxy for OpenAI Realtime API
-"""
+"""WebSocket proxy for OpenAI Realtime API"""
 import asyncio
+import logging
 import websockets
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.core.dependencies import get_current_user
+from app.core.security import security
 from app.core.config import settings
+from app.repositories.user_repository import UserRepository
+from app.repositories.session_repository import SessionRepository
 from app.models.user import User
 from app.models.session import RecordingSession
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -24,24 +27,57 @@ async def realtime_websocket_proxy(
     """
     WebSocket proxy to OpenAI Realtime API
     
-    This proxy handles authentication with OpenAI so the frontend doesn't need the API key
+    This proxy handles authentication with OpenAI so the frontend doesn't need the API key.
+    Requires a valid JWT token as a query parameter 'token'.
     """
-    print(f"[REALTIME_WS] Client connecting for session {session_id}")
+    logger.info("Client connecting for session %d", session_id)
     
-    # Accept the client connection
+    # --- Authentication: validate token before accepting ---
+    token = websocket.query_params.get("token")
+    if not token:
+        logger.warning("No token provided for WebSocket connection")
+        await websocket.close(code=4401, reason="Authentication required")
+        return
+    
+    try:
+        payload = security.decode_token(token)
+        if not payload:
+            raise ValueError("Invalid token")
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise ValueError("Invalid token payload")
+        
+        user_repo = UserRepository(db)
+        user = user_repo.get_by_id(user_id)
+        if not user or not user.is_active or not user.is_approved:
+            raise ValueError("User not found or inactive")
+        
+        # Verify session belongs to user's tenant
+        session_repo = SessionRepository(db)
+        session_obj = session_repo.get_by_id(session_id)
+        if not session_obj or session_obj.tenant_id != user.tenant_id:
+            raise ValueError("Session not found or access denied")
+        
+        logger.info("Authenticated user %d for session %d", user.id, session_id)
+    except Exception as e:
+        logger.warning("Authentication failed: %s", e)
+        await websocket.close(code=4403, reason="Authentication failed")
+        return
+    
+    # Accept the client connection (only after auth)
     await websocket.accept()
-    print(f"[REALTIME_WS] Client connection accepted")
+    logger.debug("Client connection accepted for session %d", session_id)
     
     try:
         # Get API key from settings
         api_key = settings.OPENAI_API_KEY
         if not api_key:
-            print("[REALTIME_WS ERROR] OPENAI_API_KEY not configured")
+            logger.error("OPENAI_API_KEY not configured")
             await websocket.send_json({"error": "OPENAI_API_KEY not configured"})
             await websocket.close()
             return
         
-        print(f"[REALTIME_WS] API key found, connecting to OpenAI...")
+        logger.debug("Connecting to OpenAI Realtime API...")
         
         # Connect to OpenAI Realtime API
         openai_ws_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17"
@@ -53,7 +89,7 @@ async def realtime_websocket_proxy(
                 "OpenAI-Beta": "realtime=v1"
             }
         ) as openai_ws:
-            print(f"[REALTIME_WS] Connected to OpenAI successfully")
+            logger.info("Connected to OpenAI Realtime API for session %d", session_id)
             
             # Create tasks for bidirectional proxy
             async def client_to_openai():
@@ -61,37 +97,50 @@ async def realtime_websocket_proxy(
                 try:
                     while True:
                         data = await websocket.receive_text()
-                        print(f"[REALTIME_WS] Client -> OpenAI: {data[:100]}...")
+                        logger.debug("Client -> OpenAI: %s...", data[:100])
                         await openai_ws.send(data)
                 except WebSocketDisconnect:
-                    print("[REALTIME_WS] Client disconnected")
+                    logger.info("Client disconnected from session %d", session_id)
                 except Exception as e:
-                    print(f"[REALTIME_WS ERROR] client_to_openai: {e}")
+                    logger.error("client_to_openai error: %s", e)
             
             async def openai_to_client():
                 """Forward messages from OpenAI to client"""
                 try:
                     async for message in openai_ws:
-                        print(f"[REALTIME_WS] OpenAI -> Client: {str(message)[:100]}...")
-                        await websocket.send_text(message)
+                        logger.debug("OpenAI -> Client: %s...", str(message)[:100])
+                        try:
+                            await websocket.send_text(message)
+                        except Exception:
+                            # Client already disconnected, stop forwarding
+                            break
                 except Exception as e:
-                    print(f"[REALTIME_WS ERROR] openai_to_client: {e}")
+                    logger.error("openai_to_client error: %s", e)
             
-            # Run both proxy directions concurrently
-            await asyncio.gather(
-                client_to_openai(),
-                openai_to_client(),
-                return_exceptions=True
+            # Run both directions concurrently; cancel the other when one finishes
+            task1 = asyncio.create_task(client_to_openai())
+            task2 = asyncio.create_task(openai_to_client())
+            
+            done, pending = await asyncio.wait(
+                [task1, task2],
+                return_when=asyncio.FIRST_COMPLETED,
             )
+            
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
     
     except Exception as e:
-        print(f"[REALTIME_WS ERROR] WebSocket proxy error: {e}")
+        logger.error("WebSocket proxy error for session %d: %s", session_id, e)
         try:
             await websocket.send_json({"error": str(e)})
-        except:
+        except Exception:
             pass
     finally:
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass

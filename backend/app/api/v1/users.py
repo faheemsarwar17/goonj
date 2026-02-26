@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.core.dependencies import get_current_user
 from app.services.user_service import UserService
-from app.schemas.user import UserResponse, UserUpdate
+from app.schemas.user import UserResponse, UserSelfUpdate
 from app.models.user import User
 
 
@@ -24,12 +24,12 @@ async def get_my_profile(
 
 @router.put("/me", response_model=UserResponse)
 async def update_my_profile(
-    user_data: UserUpdate,
+    user_data: UserSelfUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Update current user's profile
+    Update current user's profile (name, email, password only)
     """
     user_service = UserService(db)
     return user_service.update_user(

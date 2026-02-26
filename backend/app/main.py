@@ -9,23 +9,25 @@ from app.middleware.error_handler import setup_error_handlers
 from app.models import Tenant, User, RecordingSession, Transcript, Speaker, SpeakerSegment
 
 
-# Create FastAPI application
+# Create FastAPI application – disable interactive docs in production
+_is_prod = settings.ENVIRONMENT == "production"
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Audio Transcript API with authentication and multi-tenancy support",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json"
+    docs_url=None if _is_prod else "/api/docs",
+    redoc_url=None if _is_prod else "/api/redoc",
+    openapi_url=None if _is_prod else "/api/openapi.json"
 )
 
-# Setup CORS
+# Setup CORS – only allow the methods and headers actually needed
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=[m.strip() for m in settings.ALLOWED_METHODS.split(",")],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 
 # Setup error handlers

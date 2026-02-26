@@ -1,6 +1,6 @@
 """Authentication endpoints"""
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.core.dependencies import get_current_user
@@ -9,6 +9,7 @@ from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.schemas.auth import LoginResponse
 from app.schemas.common import MessageResponse
 from app.models.user import User
+from app.middleware.rate_limiter import auth_rate_limiter
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(
+    request: Request,
     user_data: UserCreate,
     db: Session = Depends(get_db)
 ):
@@ -23,12 +25,14 @@ async def signup(
     Register a new user
     Account will be pending admin approval
     """
+    auth_rate_limiter.check(request)
     auth_service = AuthService(db)
     return auth_service.signup(user_data)
 
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    request: Request,
     credentials: UserLogin,
     db: Session = Depends(get_db)
 ):
@@ -36,6 +40,7 @@ async def login(
     Login with email and password
     Returns JWT access token
     """
+    auth_rate_limiter.check(request)
     auth_service = AuthService(db)
     return auth_service.login(credentials.email, credentials.password)
 

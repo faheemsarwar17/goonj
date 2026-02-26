@@ -122,8 +122,10 @@ export const useOpenAIRealtime = (): UseOpenAIRealtimeReturn => {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const wsProtocol = apiUrl.startsWith('https') ? 'wss:' : 'ws:'
       const wsHost = apiUrl.replace(/^https?:\/\//, '')
-      const wsUrl = `${wsProtocol}//${wsHost}${session.websocketUrl}`
-      console.log('[REALTIME] Connecting to:', wsUrl)
+      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
+      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+      const wsUrl = `${wsProtocol}//${wsHost}${session.websocketUrl}${tokenParam}`
+      console.log('[REALTIME] Connecting to:', wsUrl.replace(/token=[^&]+/, 'token=***'))
       
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws

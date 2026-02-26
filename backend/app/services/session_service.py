@@ -1,5 +1,6 @@
 """Recording session service"""
 
+import logging
 from datetime import datetime
 from typing import List, Optional
 from pathlib import Path
@@ -8,6 +9,8 @@ from fastapi import UploadFile
 from app.core.exceptions import NotFoundError, AuthorizationError, ValidationError
 from app.core.config import settings
 from app.models.enums import SessionStatus, UserRole
+
+logger = logging.getLogger(__name__)
 from app.repositories.session_repository import SessionRepository
 from app.repositories.transcript_repository import TranscriptRepository
 from app.repositories.speaker_repository import SpeakerRepository
@@ -35,15 +38,12 @@ class SessionService:
         if settings.OPENAI_API_KEY:
             try:
                 self.transcription_service = TranscriptionService()
-                print(f"[SESSION_SERVICE] Transcription service initialized with model: {settings.OPENAI_MODEL}")
-                print(f"[SESSION_SERVICE] API key present: {settings.OPENAI_API_KEY[:10]}...{settings.OPENAI_API_KEY[-4:]}")
+                logger.info("Transcription service initialized with model: %s", settings.OPENAI_MODEL)
             except Exception as e:
-                print(f"[SESSION_SERVICE WARNING] Failed to initialize transcription service: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.warning("Failed to initialize transcription service: %s", e, exc_info=True)
                 self.transcription_service = None
         else:
-            print("[SESSION_SERVICE] OpenAI API key not configured, using demo transcripts")
+            logger.info("OpenAI API key not configured, using demo transcripts")
     
     def create_session(
         self,
@@ -122,18 +122,17 @@ class SessionService:
         # Handle audio file upload
         audio_file_saved = False
         if audio_file:
-            print(f"[SERVICE] Processing audio file upload for session {session_id}")
+            logger.info("Processing audio file upload for session %d", session_id)
             try:
                 # Ensure the file pointer is at the beginning
                 audio_file.file.seek(0)
                 
-                print(f"[SERVICE] Calling storage_service.save_audio_file")
                 file_path = self.storage_service.save_audio_file(
                     audio_file,
                     tenant_id,
                     session_id
                 )
-                print(f"[SERVICE] File saved successfully at: {file_path}")
+                logger.info("File saved successfully at: %s", file_path)
                 update_dict["audio_file_path"] = file_path
                 audio_file_saved = True
                 
@@ -141,38 +140,29 @@ class SessionService:
                 file_size = self.storage_service.get_file_size(file_path)
                 if file_size:
                     update_dict["file_size_bytes"] = file_size
-                    print(f"[SERVICE] File size: {file_size} bytes")
+                    logger.debug("File size: %d bytes", file_size)
                     
             except Exception as e:
                 # Log error but don't fail the session end
-                print(f"[SERVICE ERROR] Error saving audio file: {str(e)}")
-                import traceback
-                traceback.print_exc()
+                logger.error("Error saving audio file: %s", e, exc_info=True)
         else:
-            print(f"[SERVICE] No audio file provided for session {session_id}")
+            logger.debug("No audio file provided for session %d", session_id)
         
         updated_session = self.session_repo.update(session_id, update_dict)
         
         # Auto-generate transcript for the completed session
-        print(f"[SESSION_SERVICE] Checking if transcript exists for session {session_id}")
         transcript_exists = self.transcript_repo.exists_for_session(session_id)
-        print(f"[SESSION_SERVICE] Transcript exists: {transcript_exists}")
+        logger.debug("Transcript exists for session %d: %s", session_id, transcript_exists)
         
         if not transcript_exists:
             if audio_file_saved and updated_session.audio_file_path:
                 # Try to transcribe with AI if service is available
-                print(f"[SESSION_SERVICE] Transcription service available: {self.transcription_service is not None}")
                 if self.transcription_service:
-                    print(f"[SESSION_SERVICE] Starting AI transcription for session {session_id}")
-                    self._generate_ai_transcript(
-                        session_id,
-                        tenant_id,
-                        updated_session.audio_file_path,
-                        updated_session
-                    )
+                    # Async task scheduled in endpoint to prevent blocking
+                    logger.info("Transcription task should be triggered by endpoint for session %d", session_id)
                 else:
                     # Fallback to demo transcript
-                    print(f"[SESSION_SERVICE] Transcription service not available, generating demo transcript")
+                    logger.info("Transcription service not available, generating demo transcript")
                     self._generate_demo_transcript(
                         session_id,
                         tenant_id,
@@ -182,7 +172,7 @@ class SessionService:
                     )
             else:
                 # No audio file - generate demo transcript
-                print(f"[SESSION_SERVICE] No audio file saved, generating demo transcript")
+                logger.info("No audio file saved, generating demo transcript")
                 self._generate_demo_transcript(
                     session_id,
                     tenant_id,
@@ -191,9 +181,31 @@ class SessionService:
                     audio_file_saved=False
                 )
         else:
-            print(f"[SESSION_SERVICE] Transcript already exists for session {session_id}, skipping generation")
+            logger.debug("Transcript already exists for session %d, skipping generation", session_id)
         
         return SessionResponse.model_validate(updated_session)
+
+    def trigger_transcription(self, session_id: int, tenant_id: int):
+        """
+        Trigger transcription process manually (e.g. from background task)
+        """
+        session = self.session_repo.get_with_tenant_check(session_id, tenant_id)
+        if not session or not session.audio_file_path:
+            logger.warning("Cannot transcribe: Session %d not found or no audio file", session_id)
+            return
+            
+        if self.transcription_service:
+            logger.info("Starting AI transcription for session %d", session_id)
+            try:
+                self._generate_ai_transcript(
+                    session_id,
+                    tenant_id,
+                    session.audio_file_path,
+                    session
+                )
+            except Exception as e:
+                logger.error("Background transcription failed: %s", e, exc_info=True)
+
     
     def get_session(
         self,
@@ -379,13 +391,13 @@ class SessionService:
             session: Session model instance
         """
         try:
-            print(f"[TRANSCRIPT_GEN] Starting AI transcription for session {session_id}")
+            logger.info("Starting AI transcription for session %d", session_id)
             
             # Get absolute path to audio file
             absolute_path = self.storage_service.get_file_path(audio_file_path)
             
             if not absolute_path.exists():
-                print(f"[TRANSCRIPT_GEN ERROR] Audio file not found: {absolute_path}")
+                logger.error("Audio file not found: %s", absolute_path)
                 self._generate_demo_transcript(session_id, tenant_id, session, None, audio_file_saved=False)
                 return
             
@@ -394,7 +406,7 @@ class SessionService:
             if session.ended_at and session.started_at:
                 time_diff = session.ended_at - session.started_at
                 actual_duration = time_diff.total_seconds()
-                print(f"[TRANSCRIPT_GEN] Actual recording duration: {actual_duration:.1f} seconds")
+                logger.info("Actual recording duration: %.1f seconds", actual_duration)
             
             # Perform transcription with speaker diarization
             result = self.transcription_service.transcribe_with_speakers(str(absolute_path), actual_duration)
@@ -421,7 +433,7 @@ class SessionService:
             }
             transcript = self.transcript_repo.create(transcript_dict)
             
-            print(f"[TRANSCRIPT_GEN] Transcript created successfully (ID: {transcript.id})")
+            logger.info("Transcript created successfully (ID: %d)", transcript.id)
             
             # Create speaker records
             if result.get("speakers"):
@@ -433,15 +445,13 @@ class SessionService:
                     result["segments"]
                 )
             
-            print(f"[TRANSCRIPT_GEN] AI transcription completed for session {session_id}")
+            logger.info("AI transcription completed for session %d", session_id)
             
         except Exception as e:
-            print(f"[TRANSCRIPT_GEN ERROR] Failed to generate AI transcript: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Failed to generate AI transcript: %s", e, exc_info=True)
             
             # Fallback to demo transcript
-            print(f"[TRANSCRIPT_GEN] Falling back to demo transcript")
+            logger.info("Falling back to demo transcript")
             self._generate_demo_transcript(session_id, tenant_id, session, None, audio_file_saved=True)
     
     def _create_speaker_records(
@@ -463,7 +473,7 @@ class SessionService:
             segments: List of transcript segments with speaker labels
         """
         try:
-            print(f"[SPEAKER_GEN] Creating speaker records for {len(speaker_labels)} speakers")
+            logger.info("Creating speaker records for %d speakers", len(speaker_labels))
             
             # Calculate speaking duration for each speaker
             speaker_durations = {}
@@ -485,12 +495,10 @@ class SessionService:
                 
                 self.speaker_repo.create(speaker_dict)
             
-            print(f"[SPEAKER_GEN] Created {len(speaker_labels)} speaker records")
+            logger.info("Created %d speaker records", len(speaker_labels))
             
         except Exception as e:
-            print(f"[SPEAKER_GEN ERROR] Failed to create speaker records: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Failed to create speaker records: %s", e, exc_info=True)
     
     def _generate_demo_transcript(
         self,

@@ -1,8 +1,11 @@
 """Global error handler middleware"""
 
+import logging
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from app.core.exceptions import AppException
+
+logger = logging.getLogger(__name__)
 
 
 async def error_handler_middleware(request: Request, call_next):
@@ -19,12 +22,11 @@ async def error_handler_middleware(request: Request, call_next):
             content={
                 "detail": e.message,
                 "status_code": e.status_code,
-                "details": e.details
             }
         )
     except Exception as e:
-        # Log unexpected errors
-        print(f"Unexpected error: {str(e)}")
+        # Log unexpected errors server-side only
+        logger.exception("Unexpected error on %s %s", request.method, request.url.path)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -48,6 +50,5 @@ def setup_error_handlers(app):
             content={
                 "detail": exc.message,
                 "status_code": exc.status_code,
-                "details": exc.details
             }
         )

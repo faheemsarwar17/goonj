@@ -232,47 +232,66 @@ class TranscriptionService:
     def format_transcript_text(self, segments: List[Dict]) -> str:
         """
         Format transcript segments into readable text with speaker labels
-        
-        Args:
-            segments: List of segments with text, timestamps, and speaker labels
-            
-        Returns:
-            Formatted transcript text
         """
+        if not segments:
+            return ""
+
         formatted_lines = []
         current_speaker = None
         current_text = []
+
+        # Analyze speakers
+        speakers_found = set()
+        for s in segments:
+            spk = s.get("speaker")
+            if spk:
+                speakers_found.add(spk)
         
-        for segment in segments:
-            speaker = segment.get("speaker", "UNKNOWN")
+        # Hide labels if:
+        # 1. No speaker info at all
+        # 2. Only one speaker and it's the default "SPEAKER_00"
+        hide_labels = len(speakers_found) == 0 or (len(speakers_found) == 1 and "SPEAKER_00" in speakers_found)
+
+        for i, segment in enumerate(segments):
+            speaker = segment.get("speaker", "SPEAKER_00")
             text = segment.get("text", "").strip()
             start = segment.get("start", 0)
             
             if not text:
                 continue
             
-            # Format timestamp
+            # Use timestamp from segment
             timestamp = self._format_timestamp(start)
             
-            # If speaker changed, start new paragraph
-            if speaker != current_speaker:
-                # Add previous speaker's text
+            # Determine if this starts a new paragraph (speaker change)
+            if current_speaker is None:
+                # First segment ever
+                if hide_labels:
+                    formatted_lines.append(f"[{timestamp}]")
+                else:
+                    formatted_lines.append(f"[{timestamp}] {speaker}:")
+                current_speaker = speaker
+                current_text = [text]
+            elif speaker != current_speaker:
+                # Speaker changed, flush previous and start new
                 if current_text:
                     formatted_lines.append(" ".join(current_text))
-                    formatted_lines.append("")  # Empty line between speakers
-                
-                # Start new speaker section
-                formatted_lines.append(f"[{timestamp}] {speaker}:")
+                    formatted_lines.append("") # Empty line spacing
+
+                if hide_labels:
+                    formatted_lines.append(f"[{timestamp}]")
+                else:
+                    formatted_lines.append(f"[{timestamp}] {speaker}:")
                 current_speaker = speaker
                 current_text = [text]
             else:
-                # Continue with same speaker
+                # Same speaker, continue
                 current_text.append(text)
         
-        # Add final speaker's text
+        # Flush final buffer
         if current_text:
             formatted_lines.append(" ".join(current_text))
-        
+            
         return "\n".join(formatted_lines)
     
     def _format_timestamp(self, seconds: float) -> str:

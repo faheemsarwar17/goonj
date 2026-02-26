@@ -2,10 +2,10 @@
 
 from typing import Optional
 from pathlib import Path
-from fastapi import APIRouter, Depends, UploadFile, File, Form, Query, status, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, Query, status, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from app.database.session import get_db
+from app.database.session import get_db, SessionLocal
 from app.core.dependencies import get_current_user, get_current_user_with_query_token
 from app.core.config import settings
 from app.services.session_service import SessionService
@@ -40,9 +40,30 @@ async def start_session(
     )
 
 
+def run_transcription_task(session_id: int, tenant_id: int):
+    """
+    Background task wrapper for transcription
+    """
+    # Create new session for background task
+    db = SessionLocal()
+    try:
+        service = SessionService(db)
+        if service.transcription_service:
+            print(f"[BACKGROUND] Starting transcription for session {session_id}")
+            service.trigger_transcription(session_id, tenant_id)
+        else:
+            print(f"[BACKGROUND] Transcription service not configured, skipping")
+    except Exception as e:
+        print(f"[BACKGROUND ERROR] Transcription task failed: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
 @router.post("/{session_id}/end", response_model=SessionResponse)
 async def end_session(
     session_id: int,
+    background_tasks: BackgroundTasks,
     duration_seconds: Optional[int] = Form(None),
     audio_file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
@@ -52,18 +73,8 @@ async def end_session(
     End a recording session and upload audio file
     """
     print(f"[ENDPOINT] /sessions/{session_id}/end called")
-    print(f"[ENDPOINT] User: {current_user.id}, Tenant: {current_user.tenant_id}")
-    print(f"[ENDPOINT] Duration: {duration_seconds}")
-    print(f"[ENDPOINT] Audio file received: {audio_file is not None}")
-    if audio_file:
-        print(f"[ENDPOINT] Audio file name: {audio_file.filename}")
-        print(f"[ENDPOINT] Audio file content type: {audio_file.content_type}")
-        # Check file size
-        audio_file.file.seek(0, 2)
-        size = audio_file.file.tell()
-        audio_file.file.seek(0)
-        print(f"[ENDPOINT] Audio file size: {size} bytes")
     
+    # Process the session end (save file, update status)
     session_service = SessionService(db)
     end_data = SessionEnd(duration_seconds=duration_seconds)
     
@@ -74,6 +85,15 @@ async def end_session(
         current_user.id,
         current_user.tenant_id
     )
+    
+    # Schedule background transcription if service available and audio file was uploaded
+    if session_service.transcription_service and audio_file:
+         print(f"[ENDPOINT] Scheduling background transcription for session {session_id}")
+         background_tasks.add_task(
+             run_transcription_task, 
+             session_id, 
+             current_user.tenant_id
+         )
     
     print(f"[ENDPOINT] Session ended successfully, returning result")
     return result
@@ -186,8 +206,15 @@ async def get_session_audio(
         )
     
     # Construct full file path
-    storage_base = Path(settings.STORAGE_PATH)
-    audio_file_path = storage_base / session.audio_file_path
+    storage_base = Path(settings.STORAGE_PATH).resolve()
+    audio_file_path = (storage_base / session.audio_file_path).resolve()
+    
+    # Guard against path traversal
+    if not str(audio_file_path).startswith(str(storage_base)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid audio file path"
+        )
     
     # Check if file exists
     if not audio_file_path.exists():

@@ -84,8 +84,7 @@ def create_admin_user(db: Session, tenant_id: int):
     
     print(f"✓ Admin user created")
     print(f"  Email: {admin_email}")
-    print(f"  Password: {admin_password}")
-    print(f"  ⚠️  IMPORTANT: Change this password after first login!")
+    print(f"  ⚠️  IMPORTANT: Change the default password after first login!")
     
     return admin_user
 

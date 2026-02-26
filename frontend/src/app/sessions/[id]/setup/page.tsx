@@ -7,6 +7,7 @@ import { sessionApi } from '@/lib/api/sessions'
 import { Session } from '@/types/session'
 import { AudioLevelMeter } from '@/components/AudioLevelMeter'
 import { useRecordingContext } from '@/lib/contexts/RecordingContext'
+import DashboardLayout from '@/components/DashboardLayout'
 
 export default function SessionSetupPage() {
   const { user } = useAuth()
@@ -218,10 +219,12 @@ export default function SessionSetupPage() {
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-600">Loading...</p>
-      </div>
+     return (
+        <DashboardLayout>
+             <div className="flex h-full items-center justify-center">
+                <p className="text-slate-500">Loading...</p>
+            </div>
+        </DashboardLayout>
     )
   }
 
@@ -229,54 +232,50 @@ export default function SessionSetupPage() {
   const requiresScreen = session?.audio_source === 'device' || session?.audio_source === 'both'
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-xl font-bold text-gray-900">Setup Recording</h1>
-            </div>
-            <div className="flex items-center">
-              <span className="text-gray-700 mr-4">{user.full_name}</span>
-              <button
-                onClick={() => useAuth.getState().logout()}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
+    <DashboardLayout>
+      <div className="max-w-4xl mx-auto space-y-8">
+        <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-slate-900">Setup Recording</h1>
+             <button
+                onClick={handleCancel}
+                className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+            >
+                Cancel
+            </button>
         </div>
-      </nav>
 
-      {/* Main Content */}
-      <main className="max-w-5xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-800">{error}</p>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm text-red-800">{error}</p>
           </div>
         )}
 
         {isLoading ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600">Loading session...</p>
-          </div>
+             <div className="text-center py-12 bg-white rounded-lg shadow-sm ring-1 ring-slate-900/5">
+                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]" role="status">
+                    <span className="!absolute !-m-px !h-px !w-px !overflow-hidden !whitespace-nowrap !border-0 !p-0 ![clip:rect(0,0,0,0)]">Loading...</span>
+                </div>
+                <p className="mt-4 text-sm text-slate-500">Loading session details...</p>
+            </div>
         ) : !session ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600">Session not found</p>
-          </div>
+            <div className="text-center py-12 bg-white rounded-lg shadow-sm ring-1 ring-slate-900/5">
+                 <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <h3 className="mt-2 text-sm font-semibold text-slate-900">Session not found</h3>
+                 <p className="mt-1 text-sm text-slate-500">The requested session could not be found.</p>
+            </div>
         ) : (
           <div className="space-y-6">
             {/* Instructions */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex">
-                <svg className="h-6 w-6 text-blue-600 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-5 w-5 text-blue-600 mr-3 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div>
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">Configure Your Recording Setup</h3>
-                  <p className="text-sm text-blue-800">
+                  <h3 className="text-sm font-semibold text-blue-900">Configure Your Recording Setup</h3>
+                  <p className="mt-1 text-sm text-blue-800">
                     Test your microphone and screen recording to ensure everything works properly before starting.
                     You must grant the required permissions to continue.
                   </p>
@@ -285,195 +284,162 @@ export default function SessionSetupPage() {
             </div>
 
             {/* Session Info */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Session Details</h2>
+            <div className="bg-white rounded-lg shadow-sm ring-1 ring-slate-900/5 p-6">
+              <h2 className="text-base font-semibold leading-6 text-slate-900 mb-4">Session Details</h2>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-gray-600">Title</p>
-                  <p className="text-base font-medium text-gray-900">{session.title}</p>
+                  <p className="text-sm text-slate-500">Title</p>
+                  <p className="text-sm font-medium text-slate-900">{session.title}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Audio Source</p>
-                  <p className="text-base font-medium text-gray-900 capitalize">{session.audio_source}</p>
+                  <p className="text-sm text-slate-500">Audio Source</p>
+                  <p className="text-sm font-medium text-slate-900 capitalize">{session.audio_source}</p>
                 </div>
               </div>
             </div>
 
-            {/* Microphone Test */}
-            {requiresMic && (
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Microphone</h3>
-                    <p className="text-sm text-gray-600">Grant microphone permission to continue</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {micPermissionGranted && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Microphone Permission */}
+              {requiresMic && (
+                <div className={`rounded-lg p-6 border ${micPermissionGranted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`font-semibold ${micPermissionGranted ? 'text-emerald-900' : 'text-slate-900'}`}>
+                      Microphone
+                    </h3>
+                    {micPermissionGranted ? (
+                      <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
                         Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                        Required
                       </span>
                     )}
                   </div>
-                </div>
+                  
+                  <p className={`text-sm mb-6 ${micPermissionGranted ? 'text-emerald-800' : 'text-slate-500'}`}>
+                    {micPermissionGranted 
+                      ? "Microphone is connected and working."
+                      : "We need access to your microphone to record speech."
+                    }
+                  </p>
 
-                {!micPermissionGranted ? (
-                  <button
-                    onClick={shareMicrophone}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-md font-medium"
-                  >
-                    Share Microphone
-                  </button>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-green-50 border border-green-200 rounded-md p-3">
-                      <p className="text-sm text-green-800">
-                        ✓ Microphone permission granted. You can now start recording or test your microphone first.
-                      </p>
-                    </div>
-                    
-                    {!localMicStream ? (
+                  <div className="flex items-center gap-3">
+                    {!micPermissionGranted ? (
                       <button
-                        onClick={testMicrophone}
-                        disabled={isTestingMic}
-                        className="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 px-4 py-2 rounded-md font-medium border border-blue-300 disabled:opacity-50"
+                        onClick={shareMicrophone}
+                        className="rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500"
                       >
-                        {isTestingMic ? 'Starting Test...' : 'Test Microphone (Optional)'}
+                        Grant Permission
                       </button>
                     ) : (
-                      <>
-                        <AudioLevelMeter 
-                          stream={localMicStream} 
-                          label="Microphone Level" 
-                          color="bg-blue-500"
+                      <div className="w-full">
+                        <div className="flex items-center gap-2 mb-2">
+                          <button
+                            onClick={testMicrophone}
+                            disabled={isTestingMic}
+                            className="text-xs font-medium text-primary-600 hover:text-primary-500 disabled:opacity-50"
+                          >
+                            {isTestingMic ? 'Testing...' : 'Test Microphone'}
+                          </button>
+                          {isTestingMic && (
+                            <button 
+                                onClick={stopMicTest}
+                                className="text-xs font-medium text-red-600 hover:text-red-500"
+                            >
+                                Stop Test
+                            </button>
+                          )}
+                        </div>
+                        <AudioLevelMeter
+                            stream={localMicStream || recordingContext.micStream}
+                            label="Mic Level"
                         />
-                        <p className="text-sm text-gray-600">
-                          Speak into your microphone to test the audio level.
-                        </p>
-                        <button
-                          onClick={stopMicTest}
-                          className="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium"
-                        >
-                          Stop Test
-                        </button>
-                      </>
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* Screen Recording Test */}
-            {requiresScreen && (
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Screen Recording</h3>
-                    <p className="text-sm text-gray-600">Grant screen sharing permission with audio to continue</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {screenPermissionGranted && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
+              {/* Screen/System Audio Permission */}
+              {requiresScreen && (
+                <div className={`rounded-lg p-6 border ${screenPermissionGranted ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 shadow-sm'}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`font-semibold ${screenPermissionGranted ? 'text-emerald-900' : 'text-slate-900'}`}>
+                      System Audio
+                    </h3>
+                    {screenPermissionGranted ? (
+                      <span className="inline-flex items-center rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
                         Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                        Required
                       </span>
                     )}
                   </div>
-                </div>
+                  
+                  <p className={`text-sm mb-6 ${screenPermissionGranted ? 'text-emerald-800' : 'text-slate-500'}`}>
+                    {screenPermissionGranted 
+                      ? "System audio sharing is active."
+                      : "Share your screen (tab or window) and make sure to check 'Share system audio'."
+                    }
+                  </p>
 
-                {!screenPermissionGranted ? (
-                  <div className="space-y-4">
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                      <p className="text-sm text-yellow-800">
-                        <strong>Important:</strong> Make sure to check the "Share audio" checkbox when selecting your screen, tab, or window.
-                      </p>
-                    </div>
-                    <button
-                      onClick={shareScreenAudio}
-                      className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-md font-medium"
-                    >
-                      Share Screen Audio
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-green-50 border border-green-200 rounded-md p-3">
-                      <p className="text-sm text-green-800">
-                        ✓ Screen sharing permission granted. You can now start recording or test your screen capture first.
-                      </p>
-                    </div>
-
-                    {/* Video Preview - Always show if stream exists */}
-                    {recordingContext.screenStream && (
-                      <>
-                        <div className="relative bg-gray-900 rounded-lg overflow-hidden" style={{ paddingBottom: '56.25%' }}>
-                          <video
-                            ref={videoPreviewRef}
-                            autoPlay
-                            muted
-                            className="absolute top-0 left-0 w-full h-full object-contain"
-                          />
+                  <div className="flex items-center gap-3">
+                    {!screenPermissionGranted ? (
+                      <button
+                        onClick={shareScreenAudio}
+                        className="rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500"
+                      >
+                        Share Screen Audio
+                      </button>
+                    ) : (
+                      <div className="w-full">
+                         <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs text-emerald-700">Screen sharing active</span>
+                            <button 
+                                onClick={stopScreenTest}
+                                className="text-xs font-medium text-red-600 hover:text-red-500"
+                            >
+                                Stop Sharing
+                            </button>
                         </div>
-                        
-                        <AudioLevelMeter 
-                          stream={recordingContext.screenStream} 
-                          label="System Audio Level" 
-                          color="bg-purple-500"
-                        />
-                        <p className="text-sm text-gray-600">
-                          Screen preview is active. Play some audio to test the system audio capture.
-                        </p>
-                        <button
-                          onClick={stopScreenTest}
-                          className="w-full bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium"
-                        >
-                          Stop Preview & Re-configure
-                        </button>
-                      </>
+                        {/* Video Preview */}
+                        <div className="relative aspect-video bg-black rounded overflow-hidden">
+                           <video 
+                              ref={videoPreviewRef}
+                              autoPlay 
+                              muted 
+                              playsInline
+                              className="w-full h-full object-contain"
+                           />
+                        </div>
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
 
-            {/* Start Recording Button */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Ready to Start?</h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {canStart 
-                      ? 'All required permissions have been granted. You can now start recording.' 
-                      : 'Please test and grant all required permissions above to continue.'}
-                  </p>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleCancel}
-                    className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-md font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleStartRecording}
-                    disabled={!canStart}
-                    className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-md font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                    </svg>
-                    Start Recording
-                  </button>
-                </div>
-              </div>
+            {/* Start Button */}
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={handleStartRecording}
+                disabled={!canStart}
+                className={`
+                  rounded-md px-6 py-3 text-base font-semibold text-white shadow-sm
+                  ${canStart 
+                    ? 'bg-primary-600 hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600' 
+                    : 'bg-slate-300 cursor-not-allowed'}
+                `}
+              >
+                Start Recording
+              </button>
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </DashboardLayout>
   )
 }

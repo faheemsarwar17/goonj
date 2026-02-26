@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = Field(
         default="your-secret-key-here",
-        description="Secret key for JWT token generation"
+        description="Secret key for JWT token generation — MUST be overridden via env"
     )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -87,3 +87,24 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+# --- Startup safety checks ---
+import warnings as _warnings
+
+if settings.SECRET_KEY == "your-secret-key-here":
+    if settings.ENVIRONMENT == "production":
+        raise RuntimeError(
+            "CRITICAL: SECRET_KEY is still the default value. "
+            "Set a strong SECRET_KEY via environment variable before running in production."
+        )
+    else:
+        _warnings.warn(
+            "SECRET_KEY is using the default value. Set a strong SECRET_KEY for any non-local use.",
+            stacklevel=1,
+        )
+
+if settings.FIRST_ADMIN_PASSWORD == "changeme" and settings.ENVIRONMENT != "development":
+    _warnings.warn(
+        "FIRST_ADMIN_PASSWORD is still 'changeme'. Set a strong password via environment variable.",
+        stacklevel=1,
+    )

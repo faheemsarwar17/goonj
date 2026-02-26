@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.core.dependencies import require_admin
 from app.services.user_service import UserService
-from app.schemas.user import UserResponse, UserApproval, UserCreate, UserUpdate
+from app.schemas.user import UserResponse, UserApproval, AdminUserCreate, UserCreate, UserUpdate
 from app.schemas.common import MessageResponse
 from app.models.user import User
 
@@ -44,7 +44,7 @@ async def get_pending_users(
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
-    user_data: UserCreate,
+    user_data: AdminUserCreate,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -61,10 +61,10 @@ async def create_user(
     # Override tenant_id with current user's tenant
     user_data.tenant_id = current_user.tenant_id
     
-    # Create user via auth service
+    # Create user via auth service (role is ignored in signup, forced to USER)
     new_user = auth_service.signup(user_data)
     
-    # Auto-approve the user since admin created it
+    # Auto-approve the user since admin created it, and set the requested role
     approved_user = user_repo.approve_user(new_user.id, user_data.role)
     
     return UserResponse.model_validate(approved_user)
@@ -84,21 +84,6 @@ async def update_user(
     return user_service.update_user(
         user_id,
         user_data,
-        current_user.tenant_id
-    )
-
-
-@router.get("/pending-users", response_model=List[UserResponse])
-async def get_pending_users(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Get list of users pending approval (Admin only)
-    """
-    user_service = UserService(db)
-    return user_service.get_pending_users(
-        current_user.role,
         current_user.tenant_id
     )
 

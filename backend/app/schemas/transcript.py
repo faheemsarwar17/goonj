@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class TranscriptBase(BaseModel):
     """Base transcript schema"""
-    content: str = Field(..., min_length=1)
+    content: str = Field(default="")
     transcript_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -18,7 +18,7 @@ class TranscriptCreate(TranscriptBase):
 
 class TranscriptUpdate(BaseModel):
     """Schema for updating a transcript"""
-    content: Optional[str] = Field(None, min_length=1)
+    content: Optional[str] = Field(None)
     transcript_metadata: Optional[Dict[str, Any]] = None
 
 

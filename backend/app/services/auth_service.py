@@ -102,11 +102,10 @@ class AuthService:
         if not user.is_active:
             raise AuthenticationError("Account is inactive")
         
-        # Generate JWT token
+        # Generate JWT token – include only what's needed for auth decisions
         token_data = {
             "user_id": user.id,
             "tenant_id": user.tenant_id,
-            "email": user.email,
             "role": user.role.value
         }
         

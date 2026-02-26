@@ -13,10 +13,14 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """Schema for user signup/registration"""
+    """Schema for user signup/registration (public endpoint)"""
     password: str = Field(..., min_length=8, max_length=100)
     tenant_id: Optional[int] = None  # Will be auto-assigned if not provided
-    role: Optional[UserRole] = UserRole.USER  # Allow admins to set role
+
+
+class AdminUserCreate(UserCreate):
+    """Schema for admin creating a user (includes role)"""
+    role: Optional[UserRole] = UserRole.USER
 
 
 class UserLogin(BaseModel):
@@ -25,8 +29,15 @@ class UserLogin(BaseModel):
     password: str
 
 
+class UserSelfUpdate(BaseModel):
+    """Schema for users updating their own profile (no privilege fields)"""
+    full_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=8, max_length=100)
+
+
 class UserUpdate(BaseModel):
-    """Schema for updating user"""
+    """Schema for admin updating any user (includes privilege fields)"""
     full_name: Optional[str] = Field(None, min_length=1, max_length=255)
     email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)

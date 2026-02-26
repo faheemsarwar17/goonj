@@ -13,6 +13,14 @@ class SpeakerRepository(BaseRepository[Speaker]):
     def __init__(self, db: Session):
         super().__init__(Speaker, db)
     
+    def get_with_tenant_check(self, speaker_id: int, tenant_id: int) -> Optional[Speaker]:
+        """Get speaker by ID with tenant check"""
+        return (
+            self.db.query(Speaker)
+            .filter(Speaker.id == speaker_id, Speaker.tenant_id == tenant_id)
+            .first()
+        )
+    
     def get_by_transcript(self, transcript_id: int, tenant_id: int) -> List[Speaker]:
         """Get all speakers for a transcript"""
         return (
